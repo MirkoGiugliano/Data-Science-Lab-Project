@@ -1,2 +1,3 @@
 # Data-Science-Lab-Project
-progetto universitario
+Progetto universitario di Data Science Lab.svolto in R.
+Slide + codice
