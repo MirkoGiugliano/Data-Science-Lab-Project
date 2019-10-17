@@ -1,0 +1,618 @@
+---
+title: "def"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rlist)
+library(dplyr)
+library(tidyr)
+
+df <- read.csv("DatasetClientClustering.csv")
+
+#Porfolio Horizon is correlated to EquityInvestiment, remove Porfolio (column 13)
+
+df <- df[, -c(1:9, 13, 26)]
+summary(df)
+
+df <- df[complete.cases(df), ] # remove 123 na
+
+
+
+df$sum<- df$OtherInvestments + df$BondInvestments + df$MoneyMarketInvestments + df$Cash + df$EquityInvestments 
+
+
+df <- df[!(df$sum < 0.98),] #rimuoviamo osservazioni anomale
+
+df <- df[,-23] #remove sum
+
+set.seed(12345)
+train_ind=sample(seq_len(nrow(df)),size=0.7*nrow(df))
+
+train = df[train_ind,]
+test = df[-train_ind,]
+
+
+media_bi <- mean(train$BondInvestments)
+sd_bi <- sd(train$BondInvestments)
+ci_bi <- media_bi - sd_bi
+
+
+for (i in 1:nrow(train)) {
+  if(train$BondInvestments[i] > ci_bi) {
+    train$BI[i] <- 1
+  } else {
+    train$BI[i] <- 0
+  }
+}
+
+media_ei <- mean(train$EquityInvestments)
+sd_ei <- sd(train$EquityInvestments)
+ci_ei <- media_ei - sd_ei
+
+
+for (i in 1:nrow(train)) {
+  if(train$EquityInvestments[i] > ci_ei) {
+    train$EI[i] <- 1
+  } else {
+    train$EI[i] <- 0
+  }
+}
+
+
+for (i in 1:nrow(train)) {
+  if(train$MoneyMarketInvestments[i] > 0) {
+    train$MI[i] <- 1
+  } else {
+    train$MI[i] <- 0
+  }
+}
+
+
+for (i in 1:nrow(train)) {
+  if(train$OtherInvestments[i] > 0) {
+    train$OI[i] <- 1
+  } else {
+    train$OI[i] <- 0
+  }
+}
+
+
+
+for (i in 1:nrow(train)) {
+  if(train$Cash[i] > 0) {
+    train$C[i] <- 1
+  } else {
+    train$C[i] <- 0
+  }
+}
+
+######### TESTTTT
+
+
+media_bi_t <- mean(test$BondInvestments)
+sd_bi_t <- sd(test$BondInvestments)
+ci_bi_t <- media_bi_t - sd_bi_t
+
+
+for (i in 1:nrow(test)) {
+  if(test$BondInvestments[i] > ci_bi_t) {
+    test$BI[i] <- 1
+  } else {
+    test$BI[i] <- 0
+  }
+}
+
+media_ei_t <- mean(test$EquityInvestments)
+sd_ei_t <- sd(test$EquityInvestments)
+ci_ei_t <- media_ei_t - sd_ei_t
+
+
+for (i in 1:nrow(test)) {
+  if(test$EquityInvestments[i] > ci_ei_t) {
+    test$EI[i] <- 1
+  } else {
+    test$EI[i] <- 0
+  }
+}
+
+
+for (i in 1:nrow(test)) {
+  if(test$MoneyMarketInvestments[i] > 0) {
+    test$MI[i] <- 1
+  } else {
+    test$MI[i] <- 0
+  }
+}
+
+
+for (i in 1:nrow(test)) {
+  if(test$OtherInvestments[i] > 0) {
+    test$OI[i] <- 1
+  } else {
+    test$OI[i] <- 0
+  }
+}
+
+
+
+for (i in 1:nrow(test)) {
+  if(test$Cash[i] > 0) {
+    test$C[i] <- 1
+  } else {
+    test$C[i] <- 0
+  }
+}
+
+
+str(train)
+
+train$BI <- as.factor(train$BI)
+#train$IncomeHighLow <- as.factor(train$IncomeHighLow)
+#train$Sex <- as.factor(train$Sex)
+#train$PanicMood <- as.factor(train$PanicMood)
+#train$NoTrustInBanks <- as.factor(train$NoTrustInBanks)
+train$OI <- as.factor(train$OI)
+train$EI <- as.factor(train$EI)
+train$MI <- as.factor(train$MI)
+train$C <- as.factor(train$C)
+
+
+test$BI <- as.factor(test$BI)
+#train$IncomeHighLow <- as.factor(train$IncomeHighLow)
+#train$Sex <- as.factor(train$Sex)
+#train$PanicMood <- as.factor(train$PanicMood)
+#train$NoTrustInBanks <- as.factor(train$NoTrustInBanks)
+test$OI <- as.factor(test$OI)
+test$EI <- as.factor(test$EI)
+test$MI <- as.factor(test$MI)
+test$C <- as.factor(test$C)
+```
+
+#BOND INVESTIMENTS
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(MLmetrics)
+library(randomForest)
+#library(Rcmdr)
+library(glmnet)
+
+#train is unbalanced
+bi0 <- train %>% filter(BI == 0) #has 576 rows
+bi1 <- train %>% filter(BI == 1) #has 2757 rows
+
+balance1 <- bi1[sample(nrow(bi1), nrow(bi0)),] #
+
+train_balanced <- rbind(balance1, bi0)
+
+train_bi <- train_balanced #correct training of models
+
+
+train_bi <- train_bi[, -c(18, 24:27)]
+test_bi <- test[, -c(18, 24:27)]
+
+
+
+
+tree <- rpart(BI ~ ., data= train_bi)
+rpart.plot(tree, extra = "auto")
+summary(tree) #number of purchase is the most important variable
+printcp(tree) #complexity parameter
+
+#prediction rpart
+pred <- rpart.predict(tree, test_bi[,-23], type = "class")
+#p1 <- if_else(pred>0.5,1,0)
+t <- table(pred, test_bi$BI)
+confusionMatrix(t)
+
+
+#evaluate
+recall(pred,test_bi$BI) #0,93
+precision(pred,test_bi$BI,relevant = '1') #0,98
+F1_Score(pred,test_bi$BI,positive = '1') #0,97
+acc_rpart <- Accuracy(pred,test_bi$BI) #0,95
+```
+
+
+```{r}
+#Random Forest 
+memory.limit(100000)
+
+#remove Prov because randomForest cannot handle more than 53 categories
+train_bi_rf <- train_bi[,-17]
+
+tree_rf <- randomForest(BI ~ ., data= train_bi_rf, ntree = 100)
+print(tree_rf)
+#prediction rf
+pred_rf <- rpart.predict(tree_rf, test_bi[,-c(17,22)], type = "class")
+confusionMatrix(pred_rf, test_bi$BI)
+#evaluate
+recall(pred_rf, test_bi$BI,relevant = '1') #0.94
+precision(pred_rf ,test_bi$BI,relevant = '1') # 0.99
+F1_Score(pred_rf ,test_bi$BI,positive = '1') # 0.96
+acc_rf <- Accuracy(pred_rf, test_bi$BI) #0.94
+```
+*************************** END BI
+
+#### START EI
+```{r}
+#train is unbalanced
+ei0 <- train %>% filter(EI == 0) #has 576 rows
+ei1 <- train %>% filter(EI == 1) #has 2757 rows
+
+balance1 <- ei1[sample(nrow(ei1), nrow(ei0)),] #
+
+train_balanced <- rbind(balance1, ei0)
+
+train_ei <- train_balanced #correct training of models
+
+
+train_ei <- train_ei[, -c(19, 23, 25:27)]
+test_ei <- test[, -c(19, 23, 25:27)]
+
+
+tree <- rpart(EI ~ ., data= train_ei)
+rpart.plot(tree, extra = "auto")
+summary(tree) #number of purchase is the most important variable
+printcp(tree) #complexity parameter
+
+#prediction rpart
+pred <- rpart.predict(tree, test_ei[,-22], type = "class")
+#p1 <- if_else(pred>0.5,1,0)
+t <- table(pred, test_ei$EI)
+confusionMatrix(t)
+
+
+#evaluate
+recall(pred,test_ei$EI) #0,93
+precision(pred,test_ei$EI,relevant = '1') #0,98
+F1_Score(pred,test_ei$EI,positive = '1') #0,97
+acc_rpart <- Accuracy(pred,test_ei$EI) #0,95
+```
+
+```{r}
+#Random Forest 
+memory.limit(100000)
+
+#remove Prov because randomForest cannot handle more than 53 categories
+train_ei_rf <- train_ei[,-17]
+
+tree_rf <- randomForest(EI ~ ., data= train_ei_rf, ntree = 100)
+print(tree_rf)
+#prediction rf
+pred_rf <- rpart.predict(tree_rf, test_ei[,-c(17,22)], type = "class") #remove prov and target
+confusionMatrix(pred_rf, test_ei$EI)
+#evaluate
+recall(pred_rf, test_ei$EI,relevant = '1') #0.94
+precision(pred_rf ,test_ei$EI,relevant = '1') # 0.99
+F1_Score(pred_rf ,test_ei$EI,positive = '1') # 0.96
+acc_rf <- Accuracy(pred_rf, test_ei$EI) #0.94
+```
++++++ END EI
+
+### START MI
+
+```{r}
+#train is unbalanced
+mi0 <- train %>% filter(MI == 0) #has 913 rows
+mi1 <- train %>% filter(MI == 1) #has 2420 rows
+
+balance1 <- mi1[sample(nrow(mi1), nrow(mi0)),] #913
+
+train_balanced <- rbind(balance1, mi0)
+
+train_mi <- train_balanced #correct training of models
+
+
+train_mi <- train_mi[, -c(20, 23,24,26,27)]
+test_mi <- test[, -c(20, 23,24,26,27)]
+
+
+tree <- rpart(MI ~ ., data= train_mi)
+rpart.plot(tree, extra = "auto")
+summary(tree) #number of purchase is the most important variable
+printcp(tree) #complexity parameter
+
+#prediction rpart
+pred <- rpart.predict(tree, test_mi[,-22], type = "class")
+#p1 <- if_else(pred>0.5,1,0)
+t <- table(pred, test_mi$MI)
+confusionMatrix(t)
+
+
+#evaluate
+recall(pred,test_mi$MI) #0,93
+precision(pred,test_mi$MI,relevant = '1') #0,98
+F1_Score(pred,test_mi$MI,positive = '1') #0,97
+acc_rpart <- Accuracy(pred,test_mi$MI) #0,95
+
+```
+
+```{r}
+#remove Prov because randomForest cannot handle more than 53 categories
+train_mi_rf <- train_mi[,-17]
+
+tree_rf <- randomForest(MI ~ ., data= train_mi_rf, ntree = 100)
+print(tree_rf)
+#prediction rf
+pred_rf <- rpart.predict(tree_rf, test_mi[,-c(17,22)], type = "class") #remove prov and target
+confusionMatrix(pred_rf, test_mi$MI)
+#evaluate
+recall(pred_rf, test_mi$MI,relevant = '1') #0.94
+precision(pred_rf ,test_mi$MI,relevant = '1') # 0.99
+F1_Score(pred_rf ,test_mi$MI,positive = '1') # 0.96
+acc_rf <- Accuracy(pred_rf, test_mi$MI) #0.94
+```
+**** END MI
+
+##START OI
+```{r}
+
+oi0 <- train %>% filter(OI == 0) #has 1735 rows
+oi1 <- train %>% filter(OI == 1) #has 1598 rows
+
+balance0 <- oi0[sample(nrow(oi0), nrow(oi1)),] #913
+
+train_balanced <- rbind(balance0, oi1)
+
+train_oi <- train_balanced #correct training of models
+
+
+train_oi <- train_oi[, -c(21, 23:25, 27)]
+test_oi <- test[, -c(21, 23:25, 27)]
+
+
+tree <- rpart(OI ~ ., data= train_oi)
+rpart.plot(tree, extra = "auto")
+summary(tree) #number of purchase is the most important variable
+printcp(tree) #complexity parameter
+
+#prediction rpart
+pred <- rpart.predict(tree, test_oi[,-22], type = "class")
+#p1 <- if_else(pred>0.5,1,0)
+t <- table(pred, test_oi$OI)
+confusionMatrix(t)
+
+
+#evaluate
+recall(pred,test_oi$OI) #0,93
+precision(pred,test_oi$OI,relevant = '1') #0,98
+F1_Score(pred,test_oi$OI,positive = '1') #0,97
+acc_rpart <- Accuracy(pred,test_oi$OI) #0,95
+```
+
+
+```{r}
+#remove Prov because randomForest cannot handle more than 53 categories
+train_oi_rf <- train_oi[,-17]
+
+tree_rf <- randomForest(OI ~ ., data= train_oi_rf, ntree = 100)
+print(tree_rf)
+#prediction rf
+pred_rf <- rpart.predict(tree_rf, test_oi[,-c(17,22)], type = "class") #remove prov and target
+confusionMatrix(pred_rf, test_oi$OI)
+#evaluate
+recall(pred_rf, test_oi$OI,relevant = '1') #0.94
+precision(pred_rf ,test_oi$OI,relevant = '1') # 0.99
+F1_Score(pred_rf ,test_oi$OI,positive = '1') # 0.96
+acc_rf <- Accuracy(pred_rf, test_oi$OI) #0.94
+```
+°°°°°°°° END OI
+
+### START CASH
+```{r}
+ci0 <- train %>% filter(C == 0) #has 622 rows
+ci1 <- train %>% filter(C == 1) #has 2711 rows
+
+balance0 <- ci1[sample(nrow(ci1), nrow(ci0)),] #913
+
+train_balanced <- rbind(balance0, ci0)
+
+train_ci <- train_balanced #correct training of models
+
+
+train_ci <- train_ci[, -c(22:26)]
+test_ci <- test[, -c(22:26)]
+
+
+tree <- rpart(C ~ ., data= train_ci)
+rpart.plot(tree, extra = "auto")
+summary(tree) #number of purchase is the most important variable
+printcp(tree) #complexity parameter
+
+#prediction rpart
+pred <- rpart.predict(tree, test_ci[,-22], type = "class")
+#p1 <- if_else(pred>0.5,1,0)
+t <- table(pred, test_ci$C)
+confusionMatrix(t)
+
+
+#evaluate
+recall(pred,test_ci$C) #0,93
+precision(pred,test_ci$C,relevant = '1') #0,98
+F1_Score(pred,test_ci$C,positive = '1') #0,97
+acc_rpart <- Accuracy(pred,test_ci$C) #0,95
+
+```
+
+
+```{r}
+#remove Prov because randomForest cannot handle more than 53 categories
+train_ci_rf <- train_ci[,-17]
+
+tree_rf <- randomForest(C ~ ., data= train_ci_rf, ntree = 100)
+print(tree_rf)
+#prediction rf
+pred_rf <- rpart.predict(tree_rf, test_ci[,-c(17,22)], type = "class") #remove prov and target
+confusionMatrix(pred_rf, test_ci$C)
+#evaluate
+recall(pred_rf, test_ci$C,relevant = '1') #0.94
+precision(pred_rf ,test_ci$C,relevant = '1') # 0.99
+F1_Score(pred_rf ,test_ci$C,positive = '1') # 0.96
+acc_rf <- Accuracy(pred_rf, test_ci$C) #0.94
+```
+```{r}
+library(factoextra)
+library(ggplot2)
+
+
+
+total <- rbind(train, test)
+b <- total %>% filter(BI == 1)
+b$ind <- seq.int(nrow(b))
+df$ind <- seq.int(nrow(df))
+
+b$PanicMood <- as.factor(b$PanicMood)
+b$NoTrustInBanks <- as.factor(b$NoTrustInBanks)
+
+ggplot(df, aes(x = ind, y= ClientPotentialIndex, color = Age > 30)) + 
+  geom_point()
+
+sum(b$BondInvestments <= 0.3)
+sum(b$PanicMood == -1)
+sum(b$NoTrustInBanks == 1)
+
+plot(df$EquityInvestments, df$RiskPropension)
+```
+```{r}
+library(Rtsne)
+library(readr)
+library(cluster)
+
+VAR_NUMERIC <- c("RiskPropension", "ClientKnowledgeExperience", "Sex", "AuM", "Age", "PanicMood", "NoTrustInBanks")
+# eliminiamo Age, InheritanceIndex e Cash perché c'è correlazione
+
+VAR_NUMERIC <- c("BondInvestments", "EquityInvestments", "MoneyMarketInvestments", "Cash", "OtherInvestments", "NoTrustInBanks", "PanicMood", "AuM", "Sex", "Age", "IncomeHighLow", "RiskPropension")
+
+k_medie <- kmeans(df[,VAR_NUMERIC], centers = 2, iter.max = 10, nstart = 1)
+
+fviz_nbclust(df, FUNcluster = kmeans, method = "wss")
+fviz_nbclust(df[,VAR_NUMERIC], FUNcluster = kmeans, method = "silhouette")
+
+fviz_cluster(k_medie, df[,VAR_NUMERIC], geom= "point")
+
+str(df)
+################################
+
+df <- df[,-c(17,23)]
+
+df$Sex <- as.factor(df$Sex)
+df$PanicMood <- as.factor(df$PanicMood)
+df$NoTrustInBanks <- as.factor(df$NoTrustInBanks)
+df$IncomeHighLow <- as.factor(df$IncomeHighLow)
+
+
+
+gower_dist <- daisy(ttCash_1, metric = "gower")
+
+gower_mat <- as.matrix(gower_dist)
+
+ttCash_1[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]), arr.ind = TRUE)[1, ],  ]
+
+ttCash_1[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]), arr.ind = TRUE)[1, ], ]
+
+sil_width <- c(NA)
+for(i in 2:8){  
+  pam_fit <- pam(gower_dist, diss = TRUE, k = i)  
+  sil_width[i] <- pam_fit$silinfo$avg.width  
+}
+plot(1:8, sil_width,
+     xlab = "Number of clusters",
+     ylab = "Silhouette Width")
+lines(1:8, sil_width)
+```
+```{r}
+k <- 4
+pam_fit <- pam(gower_dist, diss = TRUE, k)
+pam_results <- ttCash_1 %>%
+  mutate(cluster = pam_fit$clustering) %>%
+  group_by(cluster) %>%
+  do(the_summary = summary(.))
+pam_results$the_summary
+```
+
+```{r}
+tsne_obj <- Rtsne(gower_dist, is_distance = TRUE)
+tsne_data <- tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit$clustering))
+ggplot(aes(x = X, y = Y), data = tsne_data) +
+  geom_point(aes(color = cluster)) + theme_minimal()
+
+```
+
+```{r}
+library(stats)
+pca_analysis <- prcomp(df, center = TRUE,scale. = TRUE)
+str(pca_analysis)
+
+library(devtools)
+install_github("vqv/ggbiplot")
+
+library(ggbiplot)
+
+ggbiplot(pca_analysis, labels = rownames(df_scale))
+```
+
+
+```{r}
+
+Trust0 <- train %>% filter(NoTrustInBanks == 0) #has 2946 rows
+Trust1 <- train %>% filter(NoTrustInBanks == 1) #has 387 rows
+
+balance0 <- Trust0[sample(nrow(Trust0), nrow(Trust1)),] #913
+
+train_balanced <- rbind(balance0, Trust1)
+
+train_Trust_a <- train_balanced #correct training of models
+
+train_Trust <- train[,-c(17, 23:27)]
+test_Trust <- test[,-c(17, 23:27)]
+
+
+train_Trust$IncomeHighLow  <- as.factor(train_Trust$IncomeHighLow)
+train_Trust$Sex  <- as.factor(train_Trust$Sex)
+train_Trust$PanicMood  <- as.factor(train_Trust$PanicMood)
+train_Trust$NoTrustInBanks  <- as.factor(train_Trust$NoTrustInBanks)
+
+str(train_Trust)
+
+```
+
+
+```{r}
+
+train_Trust_sel <- train_Trust_a[,-c(17,3,11,10,7,13, 18:21,23:26)]
+test_Trust_sel <- test[,-c(17,3,11,10,7,13, 18:21,23:26)]
+
+tt_Cash <- rbind(train_Trust_sel, test_Trust_sel)
+
+ttCash_1 <- tt_Cash %>% filter(C == 1)
+
+ttCash_1$IncomeHighLow  <- as.factor(ttCash_1$IncomeHighLow)
+#ttCash_1$Sex  <- as.factor(ttCash_1$Sex)
+ttCash_1$PanicMood  <- as.factor(ttCash_1$PanicMood)
+ttCash_1$NoTrustInBanks  <- as.factor(ttCash_1$NoTrustInBanks)
+
+ttCash_1 <- ttCash_1[,-13]
+Trust_glm = lm(Cash ~ ., ttCash_1)
+
+summary(Trust_glm)
+
+str(ttCash_1)
+
+
+```
+
+
+```{r}
+barchart(train_Trust$Age)
+```
+
